@@ -1,0 +1,23 @@
+## ------- vpn routing default settings file ------- ##
+## ######### PLEASE DON'T CHANGE THIS FILE ######### ##
+# Have a look at your local /etc/vpnrouting_settings  #
+# file instead                                        #
+
+
+
+
+
+
+#######################################################
+#######################################################
+#######################################################
+
+vpnnetwork=""
+tunnelname=""
+connectvpn=true
+vnstatdump=""
+lookupDNSInterval=10080
+logfilelines=1000
+protocol=""
+profile=""
+dnsserver=""

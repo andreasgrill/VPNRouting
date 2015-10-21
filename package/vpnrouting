@@ -1,0 +1,540 @@
+#!/bin/sh
+
+# load config
+source /etc/vpnrouting_settings.default
+source /etc/vpnrouting_settings.user
+
+PACKAGE="vpnrouting"
+VAR_DIR="/usr/local/var/${PACKAGE}"
+PIDFILE="/var/run/vpnrouting.pid"
+IPADDRESSES_FILE="/tmp/vpnrouting_ipaddresses"
+IPADDRESSES_FILE_TMP="/tmp/vpnrouting_ipaddresses.tmp"
+ENABLEDFILE="/var/packages/VPNRouting/enabled"
+FULL_PATH="${VAR_DIR}/vpnrouting"
+
+log()
+{
+   echo $1
+   echo -e `date '+%D %T'`": $1" >> /var/log/vpnrouting.log
+}
+
+getTunnel()
+{
+  if [ "$vpnnetwork" ]; then
+    tunnel="`ip route | grep ${vpnnetwork} | sed 's/.*\(ppp[0-9]\+\|tun[0-9]\+\).*/\1/' | head -n 1`"
+  elif [ "$tunnelname" ]; then
+    if [ "`ip route | grep ${tunnelname}`" ]; then
+      tunnel="$tunnelname"
+    fi
+  else
+    if [ "$protocol" == "pptp" ]; then
+      tunnel="`ip route | grep '\(ppp[0-9]\+\)' | sed 's/.*\(ppp[0-9]\+\).*/\1/' | head -n 1`"
+    else
+      tunnel="`ip route | grep '\(tun[0-9]\+\)' | sed 's/.*\(tun[0-9]\+\).*/\1/' | head -n 1`"
+    fi
+  fi
+}
+
+quickClose()
+{
+  exit 0
+}
+
+closeVPNRouting()
+{
+  # limit log-file size
+  tail -n $logfilelines /var/log/vpnrouting.log > /tmp/vpnrouting_logfile
+  cat /tmp/vpnrouting_logfile > /var/log/vpnrouting.log
+  rm /tmp/vpnrouting_logfile
+
+  rm -f $PIDFILE
+  exit 0
+}
+
+shutdownError()
+{
+  log "ERROR> SHUTDOWN VPN ROUTING with error: $1"
+  synodsmnotify @administrators "vpnrouting" "Error: $1"
+
+  rm -f $PIDFILE
+  exit 1
+}
+
+
+install_iphook()
+{
+  exists=`grep "vpnrouting" "$2"`
+  if [ ! "$exists" ]; then
+    log " > No hook found in $2 reinsert hook!"
+    hook=`echo $1 | sed -e 's/[\\/&]/\\\\&/g'`
+    sed '/#!\/bin\/sh/{p;s/.*/'"$hook"'/;}' $2 > /tmp/vpnrouting.tmp
+    cat /tmp/vpnrouting.tmp > $2
+  fi
+}
+
+check_hooks()
+{
+   install_iphook "${FULL_PATH} null" "/etc/ppp/ip-down"
+   install_iphook "${FULL_PATH} start &" "/etc/ppp/ip-up"
+   install_iphook "${FULL_PATH} null" "/etc/ppp/ipv6-down"
+   install_iphook "${FULL_PATH} start &" "/etc/ppp/ipv6-up"
+
+   if [ ! -h "/usr/syno/etc/rc.d/S96vpnrouting.sh" ]; then
+      log " > Creating autostart symlink in /usr/syno/etc/rc.d"
+      ln -s ${FULL_PATH} /usr/syno/etc/rc.d/S96vpnrouting.sh
+   fi
+}
+
+printStatus()
+{
+  echo -e "\nApplications:"
+  appsOn="`ps | grep python | grep sickbe`"
+  if [ "$appsOn" ]; then
+    echo "Sickbeard: On"
+  else
+    echo "Sickbeard: Off"
+  fi
+
+  appsOn="`ps | grep python | grep couchpot`"
+  if [ "$appsOn" ]; then
+    echo "CouchPotato: On"
+  else
+    echo "CouchPotato: Off"
+  fi
+
+  appsOn="`ps | grep python | grep sabnzbd`"
+  if [ "$appsOn" ]; then
+    echo "Sabnzbd: On"
+  else
+    echo "Sabnzbd: Off"
+  fi
+
+}
+
+
+lookupDNS()
+{
+  # specify the domain that should be routed over vpn here
+  domains=$(cat $1)
+  if [ -f "/tmp/vpnrouting_dnstable" ]; then
+    rm /tmp/vpnrouting_dnstable
+  fi
+  for domain in ${domains}
+  do
+      
+      # run through all ip-addresses attached to the current domain (maximum of 9999) 
+      nslookup ${domain} ${dnsserver} | grep -A 9999 'Name:' | grep 'Address' | while read -r line 
+      do
+
+        ipaddress="`echo ${line} | sed -n 's/Address\s*[0-9]*:\s*\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\).*/\1.\2/p'`"
+        routeip="${ipaddress}.0.0/16"
+
+        # check for ipv6
+        if [ ! "$ipaddress" ]; then
+          ipaddress="`echo ${line} | sed -n 's/Address\s*[0-9]*:\s*\([0-9a-fA-F:]*\).*/\1/p'`"
+          routeip="${ipaddress}"
+          
+          # check if the ip-address still couldn't be retrieved
+          if [ ! "$ipaddress" ]; then
+            log "WARN> No ipaddress for ${domain}"
+            continue
+          fi
+        fi
+        
+        # add ip-address to the file
+        echo "$routeip" >> "$IPADDRESSES_FILE"        
+        log " > dnslookup: $routeip"
+
+        # check for dns-leak protection
+        # create dns table that is later added to the hosts file
+        if [ "$dnsserver" ]; then
+          fulladdress="`echo ${line} | sed -n 's/Address\s*[0-9]*:\s*\([0-9a-fA-F:\.]*\).*/\1/p'`"
+          echo "${fulladdress} ${domain}" >> /tmp/vpnrouting_dnstable
+        fi
+      done
+      
+  done
+
+  # add dns-leak protection
+  if [ -f "/tmp/vpnrouting_dnstable" ]; then
+    log " > Insert HOSTS Entries"
+
+    dnstable=`cat /tmp/vpnrouting_dnstable`
+    rm /tmp/vpnrouting_dnstable
+
+    # check both hosts files in dsm
+    declare -a hosts=("/etc.defaults/hosts" "/etc/hosts")
+
+    for host in "${hosts[@]}"
+    do
+      # remove existing custom dns-area
+      while [ "`grep VPNRoutingBEGIN $host`" ]
+      do
+        begin=`awk '/VPNRoutingBEGIN/ {print FNR}' "$host" | head -n 1`
+        end=`awk '/VPNRoutingEND/ {print FNR}' "$host" | head -n 1`
+        end=`expr $end + 1`
+
+        if ([ "$begin" ]) && ([ "$end" ]); then
+          sed -i "$begin,${end}d" "$host"
+        fi
+      done
+
+      # readd custom dns-area
+      echo "# VPNRoutingBEGIN - auto generated block #" >> "$host"
+      echo "$dnstable" >> "$host"
+      echo "# VPNRoutingEND - auto generated block #" >>  "$host"
+    done
+  fi
+
+}
+
+genRouteTables()
+{
+  removeOnly="$2"
+
+  if( [ -f "${IPADDRESSES_FILE}" ] && test `find "/etc/vpnrouting_domains" -newer "${IPADDRESSES_FILE}"`); then
+     log "> Default domains have been changed"
+  fi
+
+  if( [ -f "${IPADDRESSES_FILE}" ] && test `find "/etc/vpnrouting_customdomains" -newer "${IPADDRESSES_FILE}"`); then
+     log "> User file has been changed"
+  fi
+
+  # do we have to fetch ip addresses? 
+  # we need to do this if
+  # ipaddress file does not exist (is empty)
+  # domains file has been changed
+  # customdomains have been changed
+  # the ipaddress file needs an update
+  if([ ! "$removeOnly" ]) && ([ ! -s "${IPADDRESSES_FILE}" ] || test `find "/etc/vpnrouting_domains" -newer "${IPADDRESSES_FILE}"` || test `find "/etc/vpnrouting_customdomains" -newer "${IPADDRESSES_FILE}"` || test `find "${IPADDRESSES_FILE}" -mmin +${lookupDNSInterval}`); then
+    log " > Lookup DNS entries"
+    
+    # delete ip-addresses file content
+    true > "${IPADDRESSES_FILE}"
+
+    # lookup ips
+    cat "/etc/vpnrouting_domains" > "/tmp/vpnrouting_domains"
+    cat "/etc/vpnrouting_customdomains" >> "/tmp/vpnrouting_domains"
+
+    lookupDNS "/tmp/vpnrouting_domains"
+
+    rm "/tmp/vpnrouting_domains"
+
+    # clean up a bit
+    if [[ -s ${IPADDRESSES_FILE} ]] ; then
+      sort ${IPADDRESSES_FILE} | uniq > ${IPADDRESSES_FILE_TMP}
+      mv ${IPADDRESSES_FILE_TMP} ${IPADDRESSES_FILE}
+    else
+      rm -f ${IPADDRESSES_FILE}
+    fi
+  fi
+
+  log " > Rerouting ip addresses to device $1"
+
+  ipaddresses=$(cat ${IPADDRESSES_FILE})
+
+  for ipaddress in ${ipaddresses}
+  do        
+    # is the current ip address ipv6?!
+    inet6Check="`echo ${ipaddress} | sed -n 's/[0-9]*:\s*\([0-9a-fA-F:]*\).*/\1/p'`"
+    inetSwitch="-4"
+    
+    # a little bit too verbose
+    echo " > Processing ${ipaddress}"
+    if [ "$inet6Check" ]; then
+        # echo "    > Is ipv6 baby!"
+        inetSwitch="-6"
+    # else
+        # echo "    > Is still ipv4, bitch!"
+    fi
+
+    rtExistsForTunnel="`ip ${inetSwitch} route | grep ${ipaddress} | grep $1`"
+    rtExists="`ip ${inetSwitch} route | grep ${ipaddress}`"
+
+    if ([ "$removeOnly" ]) || ( [ "$rtExists" ] && [ ! "$rtExistsForTunnel" ] && [ "$ipaddress" ] ); then
+       echo "    > Is removed from table"
+       ip ${inetSwitch} route del ${ipaddress}
+    fi
+
+    rtExists="`ip ${inetSwitch} route | grep ${ipaddress}`"  
+    if ([ "$removeOnly" ] || [ "$rtExists" ]); then
+        echo "    > Is already routed"
+        continue
+    else
+        echo "    > Adding ${ipaddress} dev $1"
+        ip ${inetSwitch} route add ${ipaddress} dev $1
+    fi
+  done
+}
+
+check_vpn()
+{
+  getTunnel
+  if [ "$tunnel" ]; then
+    # check if the vpn connection is working
+    if ([ "$tunnel" ] && $connectvpn); then
+      ping -c1 -w2 8.8.8.8 > /dev/null
+      if [ $? != 0 ] ; then
+        log "WARN> Google DNS (google-public-dns-a.google.com) is not reachable over the VPN! Restarting VPN!"
+        return 1
+      fi
+      return 0
+    fi
+  fi
+
+  # vpn not running
+  return 1
+}
+
+check_routing()
+{
+  if check_vpn ; then
+    t=`ip route | grep 8.8.0.0 | grep "$tunnel"`
+    if [ "$t" ]; then
+      return 0
+    fi
+  fi
+
+  # no routing
+  return 1
+}
+
+require_tunnel()
+{
+  getTunnel
+  if [ ! "$tunnel" ]; then
+    if $connectvpn; then
+      log "WARN> Unable to establish connection. Try again later!"
+    else
+      log "WARN> Synology has not (re)connected VPN tunnel. Try again later!"
+    fi
+    genRouteTables lo
+
+    # shuts down vpnrouting
+    shutdownError "Unable to establish VPN tunnel"
+  fi
+}
+
+establish_connection()
+{
+  
+  if check_vpn ; then
+    log "Already connected to VPN"
+  else
+    stop
+  fi
+
+  if ([ ! "$tunnel" ] && $connectvpn); then
+   log "INFO> Start Establish connection"
+
+   vpn_id=$(sed "/conf_name *= *"${profile}"/{q;}" /usr/syno/etc/synovpnclient/"${protocol}"/*client.conf | sed '1!G;h;$!d'| sed -n 's/\[\([^]]*\).*/\1/p')
+   
+    if ([ "$vpn_id" ]); then
+      # 5 mal versuchen
+      tries=0
+      while ([ ! "$tunnel" ] && $connectvpn && [ "$tries" -lt "5" ])
+      do
+        tries=`expr ${tries} + 1`
+        log "Connection attempt ${tries} ${tunnel}"
+
+        # check for last try
+        if [ "$tries" -ge "5" ]; then
+           poff -a
+           poff -a
+           poff -a
+           poff -a
+           poff -a
+        fi
+
+        # (re)connect
+        printf "conf_id=${vpn_id}\nconf_name=${profile}\nproto=${protocol}" > /usr/syno/etc/synovpnclient/vpnc_connecting
+        synovpnc reconnect --protocol="$protocol" --name="$profile"
+
+        sleep 15s
+        getTunnel
+      done
+    else
+      log "ERROR> Unable to aquire vpn profile id! Are you sure that your profile with the name $profile of type $protocol exists?"
+    fi
+  fi
+
+  require_tunnel
+
+}
+
+
+start()
+{
+   check_hooks
+
+   establish_connection
+
+   ####### retrieve tunnel
+   require_tunnel
+   genRouteTables ${tunnel}
+
+   printStatus
+
+   # vnstat ppp enable
+   if ([ "$vnstatdump" ] && [ -f "/opt/bin/vnstat" ]); then
+       log "Dumping stats"
+       /opt/bin/vnstat --enable -i ${tunnel}
+       $vnstatdump
+   fi
+
+}
+
+
+stop()
+{
+  log "Stopping VPNRouting"
+   # poff ruft automatisch genRouteTable lo auf, aber doppelt gemoppelt ....
+   getTunnel
+   genRouteTables lo
+   if ([ "$vnstatdump" ] && [ -f "/opt/bin/vnstat" ]); then
+      log "Disable vnstat"
+      /opt/bin/vnstat --disable -i ${tunnel}
+   fi
+   if $connectvpn; then
+      synovpnc kill_client
+      poff -a
+      poff -a
+      poff -a
+      poff -a
+   else
+      log "Can't stop VPN, because the VPN isn't managed by VPNRouting"
+   fi
+   getTunnel
+   log "VPNRouting Stopped"
+}
+
+pause()
+{
+  log "Pausing VPNRouting"
+  getTunnel
+  genRouteTables lo del
+  if $connectvpn; then
+      synovpnc kill_client
+      poff -a
+      poff -a
+      poff -a
+      poff -a
+   else
+      log "Can't stop VPN, because the VPN isn't managed by VPNRouting"
+   fi
+   getTunnel
+   log "VPNRouting Paused"
+}
+
+pid_check()
+{
+  # check if vpnrouting is already running
+  if [ -f "$PIDFILE" ]; then
+    # kill old running instances or if current instance wants to route everything to null
+    if (test `find "${PIDFILE}" -mmin +60` || [ "$1" -eq "null" ]); then
+      log "WARN> vpnrouting instance was killed!"
+      kill `cat ${PIDFILE}`
+    else
+      log "WARN> vpnrouting is already running. If you are sure it is not (check with 'ps | grep vpnrouting' run the command 'rm ${PIDFILE}'"
+      exit 0
+    fi
+  fi 
+
+  # create pid-file
+  echo $$ > "$PIDFILE"
+}
+
+if ( [ ! "$profile" ] || [ ! "$protocol" ] ); then
+  shutdownError "The vars 'profile' and 'protocol' must be set in the user config /etc/vpnrouting_settings.user."
+fi
+
+case $1 in
+        start)
+                if check_routing ; then
+                  echo "nothing to do"
+                  quickClose
+                fi
+                pid_check
+
+                # start routine
+                log "-----  Starting VPN Routing    -----"
+
+                if [ ! -f $ENABLEDFILE ]; then
+                  shutdownError "VPNRouting is disabled"
+                fi
+
+                start
+                log "-----  Starting VPN Routing FINISHED   -----"
+                break
+        ;;
+        stop)
+                pid_check
+                log "-----  Stopping VPN Routing    -----"
+                stop
+                log "-----  Stopping VPN Routing FINISHED   -----"
+                break
+        ;;
+        pause)
+                pid_check
+                log "-----  Pausing VPN Routing    -----"
+                pause
+                log "-----  Pausing VPN Routing FINISHED   -----"
+                break
+        ;;
+        status)
+                if [ ! -f $ENABLEDFILE ]; then
+                  echo "VPNRouting is disabled"
+                fi
+
+                echo "Open connections:"
+                netstat -tup | awk '{printf " > from %s to %s\n", $4,$5}' | sed -ne '3,$p'
+                
+                printStatus
+
+                echo -e "\nStatus is ..."
+                okay="`traceroute www.google.at | grep swissix`"
+                if [ "$okay" ]; then
+                   echo "okay, connected to VPN"
+                else
+                   echo "critical, not connected to VPN"
+                fi
+                break
+        ;;
+        restart)
+                pid_check
+                log "-----  Restarting VPN Routing  -----"
+                
+                if [ ! -f $ENABLEDFILE ]; then
+                  shutdownError "VPNRouting is disabled"
+                fi
+
+                stop
+                start
+                log "-----  Restarting VPN Routing FINISHED -----"
+                break
+        ;;
+        null)
+                pid_check
+                log "-----  Routing to null  -----"
+                getTunnel
+                if [ -f "/opt/bin/vnstat" ]; then
+                  log ">INFO disable ${tunnel}"
+                  /opt/bin/vnstat --disable -i ${tunnel}
+                  /opt/bin/vnstat -u
+                fi
+
+                genRouteTables lo
+                log "-----  Routing to null FINISHED  -----"
+                break
+        ;;
+        log)
+                tail -n 200 /var/log/vpnrouting.log
+                break
+        ;;
+        *)
+                pid_check
+                start
+                break
+esac
+
+closeVPNRouting

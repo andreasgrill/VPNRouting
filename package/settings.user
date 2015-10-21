@@ -1,0 +1,29 @@
+## ------- vpn routing settings file ------- ##
+# Please uncomment the setting to override the default setting
+
+# specify the profile name of the vpn connection (required)
+profile=""
+
+# specify the protocol of the vpn connection (required, e.g. 'pptp' or 'openvpn')
+protocol=""
+
+# specify the first three parts of the vpn-network address (default is "", which means 'tunnelname' is used instead)
+# vpnnetwork="10.0.1"
+
+# the tunnel name to detect the vpn connection (if no tunnelname or vpnnetwork is specified, autodetection is used instead)
+# tunnelname="ppp0"
+
+# as of dsm 4.2 it's possible to use the default vpn connection mechanism instead (default is true)
+# connectvpn=false
+
+# the path to the vnstat dump (provide an empty string, if vnstat shouldn't be executed, default is "")
+# vnstatdump="/volume1/scripts/vnstatdump.sh"
+
+# ip-addresses refresh interval in minutes (10080 is once a week, default is 10080)
+# lookupDNSInterval=3600
+
+# number of logfile lines that should be kept (default is 1000)
+# logfilelines=100000
+
+# custom dns server to prevent DNS LEAK
+dnsserver=""

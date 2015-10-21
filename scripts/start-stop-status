@@ -1,0 +1,94 @@
+#!/bin/sh
+
+# Package specific variables
+PACKAGE="vpnrouting"
+DNAME="VPNRouting"
+
+# Common variables
+INSTALL_DIR="/usr/local/${PACKAGE}"
+VAR_DIR="/usr/local/var/${PACKAGE}"
+FULL_PATH="${VAR_DIR}/vpnrouting"
+UPGRADE="/tmp/install.${PACKAGE}.upgrade"
+PATH="${INSTALL_DIR}/sbin:/bin:/usr/bin:/usr/syno/bin" # Avoid ipkg commands
+PIDFILE="/var/run/vpnrouting.pid"
+LOG_FILE="/var/log/vpnrouting.log"
+ENABLEDFILE="/var/packages/VPNRouting/enabled"
+MAX_WAIT_SECONDS=120
+
+closeVPNRouting()
+{
+  if [ -f "$PIDFILE" ] ; then
+    kill `cat ${PIDFILE}`
+  else
+    killall vpnrouting 2>/dev/null
+  fi
+  rm -f $PIDFILE
+}
+
+
+start_daemon ()
+{
+    $FULL_PATH start &
+}
+
+stop_daemon ()
+{
+    $FULL_PATH pause &
+}
+
+daemon_status ()
+{
+    if [ ! -f ${ENABLEDFILE} ]; then
+        return 1
+    fi
+    return
+}
+
+wait_for_stopped ()
+{
+	counter=$MAX_WAIT_SECONDS
+    while ( [ -f "$PIDFILE" ] && [ ${counter} -gt 0 ] ); do
+        let counter=counter-1
+        sleep 1
+    done
+
+    closeVPNRouting
+    return 1
+}
+
+
+case $1 in
+    start)
+		wait_for_stopped
+        if daemon_status; then
+            echo ${DNAME} is already running
+        else
+            echo Starting ${DNAME} ...
+            start_daemon
+        fi
+        ;;
+    stop)
+		wait_for_stopped
+        if daemon_status; then
+            echo Stopping ${DNAME} ...
+            stop_daemon
+        else
+            echo ${DNAME} is not running
+        fi
+        ;;
+    status)
+        if daemon_status; then
+            echo ${DNAME} is running
+            exit 0
+        else
+            echo ${DNAME} is not running
+            exit 1
+        fi
+        ;;
+    log)
+        echo ${LOG_FILE}
+        ;;
+    *)
+        exit 1
+        ;;
+esac

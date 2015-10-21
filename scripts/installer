@@ -1,0 +1,266 @@
+#!/bin/sh
+
+#########################################
+# A few variables to make things readable
+
+# Package specific variables
+PACKAGE="vpnrouting"
+DNAME="VPNRouting"
+
+# Common variables
+INSTALL_DIR="/usr/local/${PACKAGE}"
+VAR_DIR="/usr/local/var/${PACKAGE}"
+FULL_PATH="${VAR_DIR}/vpnrouting"
+UPGRADE="/tmp/install.${PACKAGE}.upgrade"
+PATH="${INSTALL_DIR}/sbin:/bin:/usr/bin:/usr/syno/bin" # Avoid ipkg commands
+PIDFILE="/var/run/vpnrouting.pid"
+
+SYNOUSER="/usr/syno/sbin/synouser"
+
+SYNO3APP="/usr/syno/synoman/webman/3rdparty"
+
+#########################################
+# DSM package manager functions
+
+log()
+{
+   ## echo $1
+   echo -e `date '+%D %T'`": $1" >> /var/log/vpnrouting.log
+}
+
+# restartCron()
+# {
+# 	log "INSTALL> Restarting crond"
+#     /usr/syno/etc/rc.d/S04crond.sh stop 
+#     /usr/syno/etc/rc.d/S04crond.sh start
+# }
+
+# install_iphook()
+# {
+#   log "INSTALL> Insert hook in $2"
+#   hook=`echo $1 | sed -e 's/[\\/&]/\\\\&/g'`
+#   sed '/#!\/bin\/sh/{p;s/.*/'"$hook"'/;}' $2 > /tmp/vpnrouting.tmp
+#   cat /tmp/vpnrouting.tmp > $2
+# }
+
+## custom install routing
+installrouting()
+{
+	
+   exists="`cat /etc/crontab | grep vpnrouting`"
+   if [ "$exists" ]; then
+      log "WARN> cronjob is already installed"
+   else
+      log "INSTALL> Creating cronjob for autoreconnect if connection is down"
+      echo -e "*/45\t*\t*\t*\t*\troot\t${FULL_PATH} start" >> /etc/crontab
+      # cron gets automatically restartet
+   fi
+
+   # install startup script
+   cp -f ${VAR_DIR}/startup.conf /etc/init/vpnrouting.conf
+   cp -f ${VAR_DIR}/startup-waiting.conf /etc/init/vpnrouting-waiting.conf
+
+   # remove the old startup script
+   rm /usr/syno/etc/rc.d/S96vpnrouting.sh
+
+
+   ## gets also added in the vpnrouting script (because of possible removement after update)
+   #if [ -h "/usr/syno/etc/rc.d/S96vpnrouting.sh" ]; then
+   #   log "WARN> Autostart for vpnrouting already installed"
+   #else
+   #   log "INSTALL> Creating autostart symlink in /usr/syno/etc/rc.d"
+   #   ln -s ${FULL_PATH} /usr/syno/etc/rc.d/S96vpnrouting.sh
+   #fi
+
+   log "INSTALL> Hooks are installed on first startup"
+   # see the vpnrouting script (check_hooks) for creating hooks
+
+   # exists="`cat /etc/ppp/ip-down | grep vpnrouting`"
+   # if [ "$exists" ]; then
+   #    log "WARN> ip-down hook already installed"
+   # else
+   #    log "INSTALL> Modifying /etc/ppp/ip-down to route critical hosts to NULL if VPN tunnel is unexpectly terminated"
+   #    install_iphook "${FULL_PATH} null" "/etc/ppp/ip-down"
+   # fi
+
+   # exists="`cat /etc/ppp/ip-up | grep vpnrouting`"
+   # if [ "$exists" ]; then
+   #    log "WARN> ip-up hook already installed"
+   # else
+   #    log "INSTALL> Modifying /etc/ppp/ip-up to automatically fire vpnrouting after the ppp connection started up"
+   #    install_iphook "${FULL_PATH} start &" "/etc/ppp/ip-up"
+   # fi
+
+   # exists="`cat /etc/ppp/ipv6-down | grep vpnrouting`"
+   # if [ "$exists" ]; then
+   #    log "WARN> ipv6-down hook already installed"
+   # else
+   #    log "INSTALL> Modifying /etc/ppp/ipv6-down to route critical hosts to NULL if VPN tunnel is unexpectly terminated"
+   #    install_iphook "${FULL_PATH} null" "/etc/ppp/ipv6-down"
+   # fi
+
+   # exists="`cat /etc/ppp/ipv6-up | grep vpnrouting`"
+   # if [ "$exists" ]; then
+   #    log "WARN> ipv6-up hook already installed"
+   # else
+   #    log "INSTALL> Modifying /etc/ppp/ipv6-up to automatically fire vpnrouting after the ppp connection started up"
+   #    install_iphook "${FULL_PATH} start &" "/etc/ppp/ipv6-up"
+   # fi
+}
+
+uninstallrouting()
+{	
+
+	# remove the startup link
+	#rm /usr/syno/etc/rc.d/S96vpnrouting.sh
+	rm /etc/init/vpnrouting.conf
+  rm /etc/init/vpnrouting-waiting.conf
+
+	# remove the cronjob entry
+	rm -f /tmp/vpnrouting.tmp
+	sed '/\*\/45[^\n]*vpnrouting start/d' /etc/crontab > /tmp/vpnrouting.tmp
+	cat /tmp/vpnrouting.tmp > /etc/crontab
+
+	# remove ip-down entry
+	rm -f /tmp/vpnrouting.tmp
+	sed '/vpnrouting null/d' /etc/ppp/ip-down > /tmp/vpnrouting.tmp
+	cat /tmp/vpnrouting.tmp > /etc/ppp/ip-down
+
+	# remove ip-up entry
+	rm -f /tmp/vpnrouting.tmp
+	sed '/vpnrouting start/d' /etc/ppp/ip-up > /tmp/vpnrouting.tmp
+	cat /tmp/vpnrouting.tmp > /etc/ppp/ip-up
+
+	# remove ip6-down entry
+	rm -f /tmp/vpnrouting.tmp
+	sed '/vpnrouting null/d' /etc/ppp/ipv6-down > /tmp/vpnrouting.tmp
+	cat /tmp/vpnrouting.tmp > /etc/ppp/ipv6-down
+
+	# remove ip6-up entry
+	rm -f /tmp/vpnrouting.tmp
+	sed '/vpnrouting start/d' /etc/ppp/ipv6-up > /tmp/vpnrouting.tmp
+	cat /tmp/vpnrouting.tmp > /etc/ppp/ipv6-up
+
+	# remove tmp ip-addresses file
+	rm -f /tmp/vpnrouting*
+}
+
+closeVPNRouting()
+{
+  if [ -f "$PIDFILE" ] ; then
+    kill `cat ${PIDFILE}`
+  else
+    killall vpnrouting 2>/dev/null
+  fi
+  rm -f $PIDFILE
+}
+
+preinst ()
+{
+	  closeVPNRouting
+    exit 0
+}
+
+postinst ()
+{ ( set -x
+    log "INSTALL> Start Installation"
+
+    # Installation directories
+    mkdir -p ${INSTALL_DIR}
+    mkdir -p ${VAR_DIR}
+
+  	# Copy the files
+  	cp -f ${SYNOPKG_PKGDEST}/package/* ${VAR_DIR}
+  	
+  	# set executable
+  	chmod +x ${VAR_DIR}/vpnrouting
+  	
+  	# Remove the package dir to save space
+  	rm -rf ${SYNOPKG_PKGDEST}/package 
+  	
+  	# copy settings
+    if [ ! -f "/etc/${PACKAGE}_settings.user" ]; then
+      log "INSTALL> No custom settings found -> create empty user settings file"
+      cp -f ${VAR_DIR}/settings.user /etc/${PACKAGE}_settings.user
+    fi
+    if [ ! -f "/etc/${PACKAGE}_customdomains" ]; then
+      log "INSTALL> No custom domains found -> create empty file"
+      touch /etc/${PACKAGE}_customdomains
+    fi
+  	if [ -f "/etc/${PACKAGE}_domains" ]; then
+  		log "INSTALL> Backup /etc/${PACKAGE}_domains to /etc/${PACKAGE}_domains.bak"
+  		cp -f /etc/${PACKAGE}_domains /etc/${PACKAGE}_domains.bak
+  	fi
+  	
+    log "INSTALL> Installing settings.default"
+    cp -f ${VAR_DIR}/settings.default /etc/${PACKAGE}_settings.default
+
+  	log "INSTALL> Installing domains.default"
+  	cp -f ${VAR_DIR}/domains.default /etc/${PACKAGE}_domains
+  	
+  	# create a symlink to /usr/bin
+  	ln -s ${VAR_DIR}/vpnrouting /usr/local/bin/vpnrouting
+  	
+  	# call uninstall routing
+  	uninstallrouting
+  	
+  	# call the INSTALL routine of the script
+  	installrouting
+
+    log "INSTALL> Installation finished"
+
+
+) 2> /tmp/cp.log
+    exit 0
+}
+
+preuninst ()
+{
+    # Make sure the package is not running while we are removing it.
+    #/usr/local/bin/${PACKAGE}-ctl stop
+    
+    closeVPNRouting
+
+    exit 0
+}
+
+postuninst ()
+{
+  	uninstallrouting
+  	
+    # Keep the user data and settings during the upgrade
+    if [ ! -f ${UPGRADE} ]; then
+      rm -fr ${VAR_DIR}
+  	  rm -f /etc/${PACKAGE}_*
+    fi
+  	
+  	# Remove the symlink
+  	rm -f /usr/bin/vpnrouting
+    rm -f /usr/local/bin/vpnrouting
+  	
+  	# Remove the script_file
+  	rm -f ${VAR_DIR}/vpnrouting
+
+    # Remove the installation directory
+    rm -fr ${INSTALL_DIR}
+
+    exit 0
+}
+
+preupgrade ()
+{
+    touch ${UPGRADE}
+    closeVPNRouting
+
+    exit $?
+}
+
+postupgrade ()
+{
+    uninstallrouting
+    installrouting
+
+    rm -f ${UPGRADE}
+
+    exit 0
+}
