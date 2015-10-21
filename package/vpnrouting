@@ -35,11 +35,6 @@ getTunnel()
   fi
 }
 
-quickClose()
-{
-  exit 0
-}
-
 closeVPNRouting()
 {
   # limit log-file size
@@ -85,33 +80,6 @@ check_hooks()
    fi
 }
 
-printStatus()
-{
-  echo -e "\nApplications:"
-  appsOn="`ps | grep python | grep sickbe`"
-  if [ "$appsOn" ]; then
-    echo "Sickbeard: On"
-  else
-    echo "Sickbeard: Off"
-  fi
-
-  appsOn="`ps | grep python | grep couchpot`"
-  if [ "$appsOn" ]; then
-    echo "CouchPotato: On"
-  else
-    echo "CouchPotato: Off"
-  fi
-
-  appsOn="`ps | grep python | grep sabnzbd`"
-  if [ "$appsOn" ]; then
-    echo "Sabnzbd: On"
-  else
-    echo "Sabnzbd: Off"
-  fi
-
-}
-
-
 lookupDNS()
 {
   # specify the domain that should be routed over vpn here
@@ -121,9 +89,9 @@ lookupDNS()
   fi
   for domain in ${domains}
   do
-      
-      # run through all ip-addresses attached to the current domain (maximum of 9999) 
-      nslookup ${domain} ${dnsserver} | grep -A 9999 'Name:' | grep 'Address' | while read -r line 
+
+      # run through all ip-addresses attached to the current domain (maximum of 9999)
+      nslookup ${domain} ${dnsserver} | grep -A 9999 'Name:' | grep 'Address' | while read -r line
       do
 
         ipaddress="`echo ${line} | sed -n 's/Address\s*[0-9]*:\s*\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\).*/\1.\2/p'`"
@@ -133,16 +101,16 @@ lookupDNS()
         if [ ! "$ipaddress" ]; then
           ipaddress="`echo ${line} | sed -n 's/Address\s*[0-9]*:\s*\([0-9a-fA-F:]*\).*/\1/p'`"
           routeip="${ipaddress}"
-          
+
           # check if the ip-address still couldn't be retrieved
           if [ ! "$ipaddress" ]; then
             log "WARN> No ipaddress for ${domain}"
             continue
           fi
         fi
-        
+
         # add ip-address to the file
-        echo "$routeip" >> "$IPADDRESSES_FILE"        
+        echo "$routeip" >> "$IPADDRESSES_FILE"
         log " > dnslookup: $routeip"
 
         # check for dns-leak protection
@@ -152,7 +120,7 @@ lookupDNS()
           echo "${fulladdress} ${domain}" >> /tmp/vpnrouting_dnstable
         fi
       done
-      
+
   done
 
   # add dns-leak protection
@@ -200,7 +168,7 @@ genRouteTables()
      log "> User file has been changed"
   fi
 
-  # do we have to fetch ip addresses? 
+  # do we have to fetch ip addresses?
   # we need to do this if
   # ipaddress file does not exist (is empty)
   # domains file has been changed
@@ -208,7 +176,7 @@ genRouteTables()
   # the ipaddress file needs an update
   if([ ! "$removeOnly" ]) && ([ ! -s "${IPADDRESSES_FILE}" ] || test `find "/etc/vpnrouting_domains" -newer "${IPADDRESSES_FILE}"` || test `find "/etc/vpnrouting_customdomains" -newer "${IPADDRESSES_FILE}"` || test `find "${IPADDRESSES_FILE}" -mmin +${lookupDNSInterval}`); then
     log " > Lookup DNS entries"
-    
+
     # delete ip-addresses file content
     true > "${IPADDRESSES_FILE}"
 
@@ -234,11 +202,11 @@ genRouteTables()
   ipaddresses=$(cat ${IPADDRESSES_FILE})
 
   for ipaddress in ${ipaddresses}
-  do        
+  do
     # is the current ip address ipv6?!
     inet6Check="`echo ${ipaddress} | sed -n 's/[0-9]*:\s*\([0-9a-fA-F:]*\).*/\1/p'`"
     inetSwitch="-4"
-    
+
     # a little bit too verbose
     echo " > Processing ${ipaddress}"
     if [ "$inet6Check" ]; then
@@ -256,7 +224,7 @@ genRouteTables()
        ip ${inetSwitch} route del ${ipaddress}
     fi
 
-    rtExists="`ip ${inetSwitch} route | grep ${ipaddress}`"  
+    rtExists="`ip ${inetSwitch} route | grep ${ipaddress}`"
     if ([ "$removeOnly" ] || [ "$rtExists" ]); then
         echo "    > Is already routed"
         continue
@@ -317,7 +285,7 @@ require_tunnel()
 
 establish_connection()
 {
-  
+
   if check_vpn ; then
     log "Already connected to VPN"
   else
@@ -328,7 +296,7 @@ establish_connection()
    log "INFO> Start Establish connection"
 
    vpn_id=$(sed "/conf_name *= *"${profile}"/{q;}" /usr/syno/etc/synovpnclient/"${protocol}"/*client.conf | sed '1!G;h;$!d'| sed -n 's/\[\([^]]*\).*/\1/p')
-   
+
     if ([ "$vpn_id" ]); then
       # 5 mal versuchen
       tries=0
@@ -372,16 +340,6 @@ start()
    ####### retrieve tunnel
    require_tunnel
    genRouteTables ${tunnel}
-
-   printStatus
-
-   # vnstat ppp enable
-   if ([ "$vnstatdump" ] && [ -f "/opt/bin/vnstat" ]); then
-       log "Dumping stats"
-       /opt/bin/vnstat --enable -i ${tunnel}
-       $vnstatdump
-   fi
-
 }
 
 
@@ -391,10 +349,7 @@ stop()
    # poff ruft automatisch genRouteTable lo auf, aber doppelt gemoppelt ....
    getTunnel
    genRouteTables lo
-   if ([ "$vnstatdump" ] && [ -f "/opt/bin/vnstat" ]); then
-      log "Disable vnstat"
-      /opt/bin/vnstat --disable -i ${tunnel}
-   fi
+
    if $connectvpn; then
       synovpnc kill_client
       poff -a
@@ -438,7 +393,7 @@ pid_check()
       log "WARN> vpnrouting is already running. If you are sure it is not (check with 'ps | grep vpnrouting' run the command 'rm ${PIDFILE}'"
       exit 0
     fi
-  fi 
+  fi
 
   # create pid-file
   echo $$ > "$PIDFILE"
@@ -452,7 +407,7 @@ case $1 in
         start)
                 if check_routing ; then
                   echo "nothing to do"
-                  quickClose
+                  exit 0
                 fi
                 pid_check
 
@@ -488,8 +443,6 @@ case $1 in
 
                 echo "Open connections:"
                 netstat -tup | awk '{printf " > from %s to %s\n", $4,$5}' | sed -ne '3,$p'
-                
-                printStatus
 
                 echo -e "\nStatus is ..."
                 okay="`traceroute www.google.at | grep swissix`"
@@ -503,7 +456,7 @@ case $1 in
         restart)
                 pid_check
                 log "-----  Restarting VPN Routing  -----"
-                
+
                 if [ ! -f $ENABLEDFILE ]; then
                   shutdownError "VPNRouting is disabled"
                 fi
@@ -517,12 +470,6 @@ case $1 in
                 pid_check
                 log "-----  Routing to null  -----"
                 getTunnel
-                if [ -f "/opt/bin/vnstat" ]; then
-                  log ">INFO disable ${tunnel}"
-                  /opt/bin/vnstat --disable -i ${tunnel}
-                  /opt/bin/vnstat -u
-                fi
-
                 genRouteTables lo
                 log "-----  Routing to null FINISHED  -----"
                 break
