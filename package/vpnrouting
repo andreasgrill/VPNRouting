@@ -131,9 +131,9 @@ lookupDNS()
     rm /tmp/vpnrouting_dnstable
 
     # check both hosts files in dsm
-    declare -a hosts=("/etc.defaults/hosts" "/etc/hosts")
+    hosts=`cat /etc.defaults/hosts /etc/hosts`
 
-    for host in "${hosts[@]}"
+    for host in ${hosts}
     do
       # remove existing custom dns-area
       while [ "`grep VPNRoutingBEGIN $host`" ]
