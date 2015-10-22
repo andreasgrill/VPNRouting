@@ -15,7 +15,6 @@
 vpnnetwork=""
 tunnelname=""
 connectvpn=true
-vnstatdump=""
 lookupDNSInterval=10080
 logfilelines=1000
 protocol=""

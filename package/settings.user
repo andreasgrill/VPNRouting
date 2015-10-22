@@ -16,9 +16,6 @@ protocol=""
 # as of dsm 4.2 it's possible to use the default vpn connection mechanism instead (default is true)
 # connectvpn=false
 
-# the path to the vnstat dump (provide an empty string, if vnstat shouldn't be executed, default is "")
-# vnstatdump="/volume1/scripts/vnstatdump.sh"
-
 # ip-addresses refresh interval in minutes (10080 is once a week, default is 10080)
 # lookupDNSInterval=3600
 
