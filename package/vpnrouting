@@ -87,6 +87,10 @@ lookupDNS()
   if [ -f "/tmp/vpnrouting_dnstable" ]; then
     rm /tmp/vpnrouting_dnstable
   fi
+  if [ -f "$IPADDRESSES_FILE_TMP" ]; then
+    rm "$IPADDRESSES_FILE_TMP"
+  fi
+
   for domain in ${domains}
   do
 
@@ -109,8 +113,8 @@ lookupDNS()
           fi
         fi
 
-        # add ip-address to the file
-        echo "$routeip" >> "$IPADDRESSES_FILE"
+        # add ip-address to a tmp file
+        echo "$routeip" >> "$IPADDRESSES_FILE_TMP"
         log " > dnslookup: $routeip"
 
         # check for dns-leak protection
@@ -122,6 +126,10 @@ lookupDNS()
       done
 
   done
+
+  # transfer lookups from tmp file to final file
+  cat "$IPADDRESSES_FILE_TMP" > "$IPADDRESSES_FILE"
+
 
   # add dns-leak protection
   if [ -f "/tmp/vpnrouting_dnstable" ]; then
