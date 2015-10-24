@@ -27,7 +27,7 @@ getTunnel()
       tunnel="$tunnelname"
     fi
   else
-    if [ "$protocol" == "pptp" ]; then
+    if ([ "$protocol" == "pptp" ]) || ([ "$protocol" == "l2tp" ]); then
       tunnel="`ip route | grep '\(ppp[0-9]\+\)' | sed 's/.*\(ppp[0-9]\+\).*/\1/' | head -n 1`"
     else
       tunnel="`ip route | grep '\(tun[0-9]\+\)' | sed 's/.*\(tun[0-9]\+\).*/\1/' | head -n 1`"
