@@ -163,6 +163,10 @@ lookupDNS()
     # check both hosts files in dsm
     updateHostFile "/etc.defaults/hosts" "$dnstable"
     updateHostFile "/etc/hosts" "$dnstable"
+  else
+    # deactivate hosts
+    updateHostFile "/etc.defaults/hosts" "# deactivated #"
+    updateHostFile "/etc/hosts" "# deactivated #"
   fi
 
 }
