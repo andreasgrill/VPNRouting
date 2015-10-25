@@ -80,6 +80,28 @@ check_hooks()
    fi
 }
 
+updateHostFile()
+{
+  # remove existing custom dns-area
+  host=$1
+  dnstable=$2
+  while [ "`grep VPNRoutingBEGIN $host`" ]
+  do
+    begin=`awk '/VPNRoutingBEGIN/ {print FNR}' "$host" | head -n 1`
+    end=`awk '/VPNRoutingEND/ {print FNR}' "$host" | head -n 1`
+    end=`expr $end + 1`
+
+    if ([ "$begin" ]) && ([ "$end" ]); then
+      sed -i "$begin,${end}d" "$host"
+    fi
+  done
+
+  # readd custom dns-area
+  echo "# VPNRoutingBEGIN - auto generated block #" >> "$host"
+  echo "$dnstable" >> "$host"
+  echo "# VPNRoutingEND - auto generated block #" >>  "$host"
+}
+
 lookupDNS()
 {
   # specify the domain that should be routed over vpn here
@@ -139,27 +161,8 @@ lookupDNS()
     rm /tmp/vpnrouting_dnstable
 
     # check both hosts files in dsm
-    hosts=`cat /etc.defaults/hosts /etc/hosts`
-
-    for host in ${hosts}
-    do
-      # remove existing custom dns-area
-      while [ "`grep VPNRoutingBEGIN $host`" ]
-      do
-        begin=`awk '/VPNRoutingBEGIN/ {print FNR}' "$host" | head -n 1`
-        end=`awk '/VPNRoutingEND/ {print FNR}' "$host" | head -n 1`
-        end=`expr $end + 1`
-
-        if ([ "$begin" ]) && ([ "$end" ]); then
-          sed -i "$begin,${end}d" "$host"
-        fi
-      done
-
-      # readd custom dns-area
-      echo "# VPNRoutingBEGIN - auto generated block #" >> "$host"
-      echo "$dnstable" >> "$host"
-      echo "# VPNRoutingEND - auto generated block #" >>  "$host"
-    done
+    updateHostFile "/etc.defaults/hosts" "$dnstable"
+    updateHostFile "/etc/hosts" "$dnstable"
   fi
 
 }
