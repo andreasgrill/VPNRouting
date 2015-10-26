@@ -496,6 +496,7 @@ case $1 in
         *)
                 pid_check
                 start
+                echo "----- FINISHED -----"
                 break
 esac
 
