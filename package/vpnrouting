@@ -456,17 +456,11 @@ case $1 in
                   echo "VPNRouting is disabled"
                 fi
 
-                echo "Open connections:"
-                netstat -tup | awk '{printf " > from %s to %s\n", $4,$5}' | sed -ne '3,$p'
-
-                echo -e "\nStatus is ..."
-                okay="`traceroute www.google.at | grep swissix`"
-                if [ "$okay" ]; then
-                   echo "okay, connected to VPN"
+                if check_vpn ; then
+                  echo "connected to vpn"
                 else
-                   echo "critical, not connected to VPN"
+                  echo "not connected to vpn"
                 fi
-                break
         ;;
         restart)
                 pid_check
