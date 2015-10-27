@@ -456,10 +456,10 @@ case $1 in
                   echo "VPNRouting is disabled"
                 fi
 
-                if check_vpn ; then
-                  echo "connected to vpn"
+                if check_routing ; then
+                  echo "okay"
                 else
-                  echo "not connected to vpn"
+                  echo "not connected to vpn or no routes installed"
                 fi
         ;;
         restart)
