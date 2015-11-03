@@ -80,11 +80,10 @@ check_hooks()
    fi
 }
 
-updateHostFile()
+removeEntriesFromHostFile()
 {
   # remove existing custom dns-area
   host=$1
-  dnstable=$2
   while [ "`grep VPNRoutingBEGIN $host`" ]
   do
     begin=`awk '/VPNRoutingBEGIN/ {print FNR}' "$host" | head -n 1`
@@ -95,8 +94,18 @@ updateHostFile()
       sed -i "$begin,${end}d" "$host"
     fi
   done
+}
 
-  # readd custom dns-area
+updateHostFile()
+{
+  # remove existing custom dns-area
+  host=$1
+  dnstable=$2
+
+  # remove all entries from the host file
+  removeEntriesFromHostFile "$host"
+
+  # insert custom dns-area
   echo "# VPNRoutingBEGIN - auto generated block #" >> "$host"
   echo "$dnstable" >> "$host"
   echo "# VPNRoutingEND - auto generated block #" >>  "$host"
@@ -165,8 +174,8 @@ lookupDNS()
     updateHostFile "/etc/hosts" "$dnstable"
   else
     # deactivate hosts
-    updateHostFile "/etc.defaults/hosts" "# deactivated #"
-    updateHostFile "/etc/hosts" "# deactivated #"
+    removeEntriesFromHostFile "/etc.defaults/hosts"
+    removeEntriesFromHostFile "/etc/hosts"
   fi
 
 }
@@ -188,8 +197,9 @@ genRouteTables()
   # ipaddress file does not exist (is empty)
   # domains file has been changed
   # customdomains have been changed
+  # user settings have been changed
   # the ipaddress file needs an update
-  if([ ! "$removeOnly" ]) && ([ ! -s "${IPADDRESSES_FILE}" ] || test `find "/etc/vpnrouting_domains" -newer "${IPADDRESSES_FILE}"` || test `find "/etc/vpnrouting_customdomains" -newer "${IPADDRESSES_FILE}"` || test `find "${IPADDRESSES_FILE}" -mmin +${lookupDNSInterval}`); then
+  if([ ! "$removeOnly" ]) && ([ ! -s "${IPADDRESSES_FILE}" ] || test `find "/etc/vpnrouting_domains" -newer "${IPADDRESSES_FILE}"` || test `find "/etc/vpnrouting_customdomains" -newer "${IPADDRESSES_FILE}"` || test `find "/etc/vpnrouting_settings.user" -newer "${IPADDRESSES_FILE}"` || test `find "${IPADDRESSES_FILE}" -mmin +${lookupDNSInterval}`); then
     log " > Lookup DNS entries"
 
     # delete ip-addresses file content
