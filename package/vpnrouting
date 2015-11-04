@@ -49,7 +49,7 @@ closeVPNRouting()
 shutdownError()
 {
   log "ERROR> SHUTDOWN VPN ROUTING with error: $1"
-  synodsmnotify @administrators "vpnrouting" "Error: $1"
+  synonotify VpncReconnectFail
 
   rm -f $PIDFILE
   exit 1
