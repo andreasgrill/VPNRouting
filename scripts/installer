@@ -52,7 +52,7 @@ installrouting()
       log "WARN> cronjob is already installed"
    else
       log "INSTALL> Creating cronjob for autoreconnect if connection is down"
-      echo -e "*/45\t*\t*\t*\t*\troot\t${FULL_PATH} start" >> /etc/crontab
+      echo -e "*/15\t*\t*\t*\t*\troot\t${FULL_PATH} start" >> /etc/crontab
       # cron gets automatically restartet
    fi
 
