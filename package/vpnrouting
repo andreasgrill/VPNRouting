@@ -264,6 +264,12 @@ check_vpn()
 {
   getTunnel
   if [ "$tunnel" ]; then
+    # check if routed over vpn
+    routed="`ip -4 route | grep 8.8.0.0`"
+    if ([ ! "$routed" ]); then
+      return 0
+    fi
+
     # check if the vpn connection is working
     if ([ "$tunnel" ] && $connectvpn); then
       ping -c1 -w2 8.8.8.8 > /dev/null
@@ -313,11 +319,13 @@ establish_connection()
 
   if check_vpn ; then
     log "Already connected to VPN"
+    connected=true
   else
     stop
+    connected=false
   fi
 
-  if ([ ! "$tunnel" ] && $connectvpn); then
+  if ([ ! $connected ] && $connectvpn); then
    log "INFO> Start Establish connection"
 
    vpn_id=$(sed "/conf_name *= *"${profile}"/{q;}" /usr/syno/etc/synovpnclient/"${protocol}"/*client.conf | sed '1!G;h;$!d'| sed -n 's/\[\([^]]*\).*/\1/p')
