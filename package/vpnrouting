@@ -70,14 +70,14 @@ install_iphook()
 check_hooks()
 {
    install_iphook "${FULL_PATH} null" "/etc/ppp/ip-down"
-   install_iphook "${FULL_PATH} start &" "/etc/ppp/ip-up"
+   # install_iphook "${FULL_PATH} start &" "/etc/ppp/ip-up"
    install_iphook "${FULL_PATH} null" "/etc/ppp/ipv6-down"
-   install_iphook "${FULL_PATH} start &" "/etc/ppp/ipv6-up"
+   # install_iphook "${FULL_PATH} start &" "/etc/ppp/ipv6-up"
 
-   if [ ! -h "/usr/syno/etc/rc.d/S96vpnrouting.sh" ]; then
-      log " > Creating autostart symlink in /usr/syno/etc/rc.d"
-      ln -s ${FULL_PATH} /usr/syno/etc/rc.d/S96vpnrouting.sh
-   fi
+   # if [ ! -h "/usr/syno/etc/rc.d/S96vpnrouting.sh" ]; then
+   #    log " > Creating autostart symlink in /usr/syno/etc/rc.d"
+   #    ln -s ${FULL_PATH} /usr/syno/etc/rc.d/S96vpnrouting.sh
+   # fi
 }
 
 removeEntriesFromHostFile()
