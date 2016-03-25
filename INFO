@@ -1,7 +1,7 @@
 package="VPNRouting"
 dname="VPNRouting"
 displayname="VPNRouting"
-version="2.3-0"
+version="2.3-1"
 description="Util for policy based routing over VPN. Automatically routes all domains in /etc/vpnrouting_domains over a single PPTP/OpenVPN tunnel. User defined domains can be declared in /etc/vpnrounting_customdomains (will not be overwritten by updating this package). The connection data for the VPN must be specified through the Synology VPN Client. For more settings have a look at /etc/vpnrouting_settings.user."
 maintainer="flyingflamingos"
 firmware="6.0-0"
