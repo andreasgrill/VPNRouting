@@ -325,7 +325,7 @@ establish_connection()
     connected=false
   fi
 
-  if ([ ! $connected ] && $connectvpn); then
+  if ([ "$connected" = false ] && $connectvpn); then
    log "INFO> Start Establish connection"
 
    vpn_id=$(sed "/conf_name *= *"${profile}"/{q;}" /usr/syno/etc/synovpnclient/"${protocol}"/*client.conf | sed '1!G;h;$!d'| sed -n 's/\[\([^]]*\).*/\1/p')
