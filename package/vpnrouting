@@ -354,6 +354,12 @@ establish_connection()
         sleep 15s
         getTunnel
       done
+
+      # check for manual mtu size
+      if ([ "$tunnel" ] && [ "$mtusize" -gt "0" ]); then
+        ifconfig "$tunnel" mtu "$mtusize"
+      fi
+
     else
       log "ERROR> Unable to aquire vpn profile id! Are you sure that your profile with the name $profile of type $protocol exists?"
     fi

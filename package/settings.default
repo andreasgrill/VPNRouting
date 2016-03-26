@@ -20,3 +20,4 @@ logfilelines=1000
 protocol=""
 profile=""
 dnsserver=""
+mtusize=0

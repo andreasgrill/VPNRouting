@@ -24,3 +24,6 @@ protocol=""
 
 # custom dns server to prevent DNS LEAK
 dnsserver=""
+
+# custom mtu size
+# mtusize=700
